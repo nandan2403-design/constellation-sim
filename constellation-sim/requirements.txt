@@ -1,0 +1,3 @@
+numpy>=1.24
+matplotlib>=3.7
+skyfield>=1.45
