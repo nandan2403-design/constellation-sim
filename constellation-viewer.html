@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Walker 24/3/1 constellation viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #E8EDF1; --panel: #F4F7F9; --ink: #1B2A41; --muted: #56677C; --line: #C3CED8;
+  --globe: #D3DDE6; --grat: #AFBDCA; --region: #1B2A41;
+  --p1: #1C8585; --p2: #A86E14; --p3: #5446BE; --hit: #C8323C; --off: #8B98A6;
+  --font: "Barlow", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --num: "Barlow Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1721; --panel: #15212D; --ink: #E2E9F0; --muted: #93A3B5; --line: #2A3A4B;
+    --globe: #304f72; --grat: #2C3E52; --region: #edf3f9;
+    --p1: #3CC4C4; --p2: #E3A63C; --p3: #948AF2; --hit: #fb5a5f; --off: #6d747c;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1721; --panel: #15212D; --ink: #E2E9F0; --muted: #93A3B5; --line: #2A3A4B;
+  --globe: #182636; --grat: #2C3E52; --region: #E2E9F0;
+  --p1: #3CC4C4; --p2: #E3A63C; --p3: #948AF2; --hit: #FF6468; --off: #5E6C7B;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.5; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 340px; min-height: 100vh; align-items: start; }
+.stage { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 20px 24px; }
+.stage header h1 { font-size: 22px; font-weight: 600; margin: 0; letter-spacing: 0.01em; }
+.stage header p { margin: 2px 0 0; color: var(--muted); max-width: 62ch; }
+.canvas-wrap { position: relative; flex: 1; min-height: 360px; margin-top: 12px; }
+canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; border-radius: 6px; }
+canvas:active { cursor: grabbing; }
+canvas:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--hit); outline-offset: 2px; }
+.hint { position: absolute; left: 12px; bottom: 10px; color: var(--muted); font-size: 13px; pointer-events: none; }
+.legend { position: absolute; right: 12px; bottom: 10px; display: flex; gap: 14px; font-size: 13px; color: var(--muted); flex-wrap: wrap; justify-content: flex-end; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+aside { background: var(--panel); border-left: 1px solid var(--line); padding: 20px 20px 28px; display: flex; flex-direction: column; gap: 22px; }
+.clock { font-family: var(--num); font-size: 44px; font-weight: 600; line-height: 1; letter-spacing: 0.02em; }
+.clock small { font-size: 16px; font-weight: 500; color: var(--muted); margin-left: 6px; letter-spacing: 0; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+button, select { font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+button:hover, select:hover { border-color: var(--ink); }
+button.primary { background: var(--ink); color: var(--panel); border-color: var(--ink); min-width: 84px; }
+input[type=range] { width: 100%; accent-color: var(--hit); }
+h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; padding: 6px 12px; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+label.check { display: flex; gap: 8px; align-items: center; cursor: pointer; margin: 4px 0; }
+.stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.stat b { display: block; font-family: var(--num); font-size: 28px; font-weight: 600; line-height: 1.1; }
+.stat span { font-size: 12.5px; color: var(--muted); line-height: 1.3; display: block; }
+.grid { display: grid; grid-template-columns: 34px repeat(5, 1fr); gap: 3px; font-family: var(--num); font-size: 13px; }
+.grid .ax { color: var(--muted); display: flex; align-items: center; justify-content: center; font-size: 12px; }
+.cell { aspect-ratio: 1; border-radius: 4px; background: var(--bg); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--muted); font-weight: 500; }
+.cell.on { background: var(--hit); border-color: var(--hit); color: #fff; }
+.note { font-size: 13px; color: var(--muted); margin: 6px 0 0; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+  .canvas-wrap { min-height: 0; height: 92vw; max-height: 560px; flex: none; }
+  .stage { position: relative; height: auto; padding: 16px; }
+  .hint { top: 4px; bottom: auto; left: 0; }
+  .legend { right: 0; left: 0; justify-content: center; bottom: 4px; }
+}
+</style>
+</head>
+<body>
+<h2 class="sr-only">Interactive viewer of a 24-satellite Walker Delta constellation orbiting Earth, showing which Southeast Asian targets each satellite can see, with controls for time, speed, view and satellite failures.</h2>
+<div class="app">
+  <main class="stage">
+    <header>
+      <h1>Walker 24/3/1 constellation viewer</h1>
+      <p>24 satellites in 3 planes at 550 km and 53°. A target turns red while any working satellite sees it above 10° elevation.</p>
+    </header>
+    <div class="canvas-wrap">
+      <canvas id="globe" tabindex="0" aria-label="Globe. Drag to rotate. Click a satellite to switch it off or on."></canvas>
+      <div class="hint" id="hint">Drag to rotate. Click a satellite to switch it off.</div>
+      <div class="legend" aria-hidden="true">
+        <span><i class="dot" style="background:var(--p1)"></i>Plane 1</span>
+        <span><i class="dot" style="background:var(--p2)"></i>Plane 2</span>
+        <span><i class="dot" style="background:var(--p3)"></i>Plane 3</span>
+        <span><i class="dot" style="background:var(--hit)"></i>Target in view</span>
+      </div>
+    </div>
+  </main>
+
+  <aside>
+    <section>
+      <div class="clock" id="clock" aria-live="off">00:00<small>UTC, 1 Jan 2026</small></div>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" id="play" aria-label="Pause">Pause</button>
+        <select id="speed" aria-label="Simulation speed">
+          <option value="10">10× speed</option>
+          <option value="60">1 min per second</option>
+          <option value="120" selected>2 min per second</option>
+          <option value="300">5 min per second</option>
+          <option value="600">10 min per second</option>
+        </select>
+      </div>
+      <input type="range" id="scrub" min="0" max="86400" step="60" value="0" aria-label="Time of day" style="margin-top:12px">
+    </section>
+
+    <section>
+      <h2>Now</h2>
+      <div class="stats">
+        <div class="stat"><b id="sInView">0</b><span>targets in view of 25</span></div>
+        <div class="stat"><b id="sWorking">24</b><span>satellites working</span></div>
+        <div class="stat"><b id="sGap">0</b><span>longest wait seen, min</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Target grid</h2>
+      <div class="grid" id="grid" aria-label="Target grid. Red cells are in view; numbers show minutes since last seen."></div>
+      <p class="note">Numbers show minutes since each target was last seen.</p>
+    </section>
+
+    <section>
+      <h2>View</h2>
+      <div class="seg" role="group" aria-label="Reference frame">
+        <button id="vFixed" aria-pressed="true">Earth-fixed</button>
+        <button id="vInertial" aria-pressed="false">From space</button>
+      </div>
+      <p class="note" id="viewNote">The camera turns with Earth, so you watch satellites sweep over the targets.</p>
+      <div style="margin-top:8px">
+        <label class="check"><input type="checkbox" id="tFoot" checked> Footprints (10° visibility circles)</label>
+        <label class="check"><input type="checkbox" id="tTrack" checked> Ground tracks, last 30 min</label>
+        <label class="check"><input type="checkbox" id="tOrbit" checked> Orbit paths</label>
+        <label class="check"><input type="checkbox" id="tLos" checked> Lines of sight</label>
+      </div>
+      <div class="row" style="margin-top:8px"><button id="recentre">Centre on Southeast Asia</button></div>
+    </section>
+
+    <section>
+      <h2>Failures</h2>
+      <div class="row">
+        <button id="knock">Switch off 30% at random</button>
+        <button id="restore">Restore all</button>
+      </div>
+      <p class="note">Switched-off satellites keep orbiting but stop imaging. Watch the waits in the target grid grow.</p>
+    </section>
+  </aside>
+</div>
+
+<script>
+(() => {
+  // ---- Same constants as the Python simulator ----
+  const RE = 6378.137, ALT = 550, MU = 398600.4418;
+  const A = (RE + ALT) / RE;                                  // orbit radius in Earth radii
+  const N = Math.sqrt(MU / Math.pow(RE + ALT, 3));            // mean motion, rad/s
+  const INC = 53 * Math.PI / 180;
+  const W_E = 7.2921159e-5;                                   // sidereal rotation, rad/s
+  const THETA0 = 100.66115205 * Math.PI / 180;                // Greenwich angle at 1 Jan 2026 00:00 UTC
+  const MASK = 10 * Math.PI / 180, SIN_MASK = Math.sin(MASK);
+  const LAMBDA = 14.9566 * Math.PI / 180;                     // footprint half-angle at 10°
+  const D2R = Math.PI / 180;
+  const LATS = [20, 12.5, 5, -2.5, -10], LONS = [95, 102.5, 110, 117.5, 125];
+
+  const sats = [];
+  for (let p = 0; p < 3; p++) for (let j = 0; j < 8; j++)
+    sats.push({ id: p * 8 + j, plane: p, raan: 120 * p * D2R, u0: (45 * j + 15 * p) * D2R, on: true });
+
+  const targets = [];
+  LATS.forEach((la, r) => LONS.forEach((lo, c) => targets.push({ r, c, v: unit(la, lo), last: null, outStart: null, inView: false })));
+
+  function unit(lat, lon) {
+    const a = lat * D2R, b = lon * D2R;
+    return [Math.cos(a) * Math.cos(b), Math.cos(a) * Math.sin(b), Math.sin(a)];
+  }
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const norm = a => Math.hypot(a[0], a[1], a[2]);
+  const theta = t => THETA0 + W_E * t;
+  function rotZ(v, ang) { const c = Math.cos(ang), s = Math.sin(ang); return [c * v[0] - s * v[1], s * v[0] + c * v[1], v[2]]; }
+
+  function satECI(s, t) {                                     // exact circular orbit, no J2
+    const u = s.u0 + N * t, cO = Math.cos(s.raan), sO = Math.sin(s.raan);
+    const cu = Math.cos(u), su = Math.sin(u), ci = Math.cos(INC), si = Math.sin(INC);
+    return [A * (cO * cu - sO * su * ci), A * (sO * cu + cO * su * ci), A * su * si];
+  }
+  const eciToEcef = (v, t) => rotZ(v, -theta(t));
+  const ecefToEci = (v, t) => rotZ(v, theta(t));
+
+  // ---- State ----
+  let t = 0, playing = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let speed = 120, frame = "fixed", maxGap = 0;
+  const cam = { lon: 110 * D2R, lat: 8 * D2R };
+  const show = { foot: true, track: true, orbit: true, los: true };
+
+  const $ = id => document.getElementById(id);
+  const cv = $("globe"), ctx = cv.getContext("2d");
+  let W = 0, H = 0, S = 1, CX = 0, CY = 0, dpr = 1, screenSats = [];
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const r = cv.getBoundingClientRect();
+    W = r.width; H = r.height;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    S = Math.min(W, H) * 0.40; CX = W / 2; CY = H / 2;
+  }
+  new ResizeObserver(resize).observe(cv);
+
+  // ---- Camera: orthographic projection ----
+  function basis() {
+    const cl = Math.cos(cam.lat), sl = Math.sin(cam.lat), co = Math.cos(cam.lon), so = Math.sin(cam.lon);
+    return { f: [cl * co, cl * so, sl], r: [-so, co, 0], u: [-sl * co, -sl * so, cl] };
+  }
+  function toRender(vEcef) { return frame === "fixed" ? vEcef : ecefToEci(vEcef, t); }
+  function project(v, B) {
+    return { x: CX + S * dot(v, B.r), y: CY - S * dot(v, B.u), d: dot(v, B.f) };
+  }
+  function hidden(p) {                                        // behind the Earth disc?
+    return p.d < 0 && Math.hypot(p.x - CX, p.y - CY) < S;
+  }
+
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  let C = {};
+  function readColours() {
+    ["globe", "grat", "region", "p1", "p2", "p3", "hit", "off", "ink", "muted"].forEach(k => C[k] = css("--" + k));
+  }
+  readColours();
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", readColours);
+  new MutationObserver(readColours).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  function polyline(points, B, style, width, alpha, surface) {
+    ctx.strokeStyle = style; ctx.lineWidth = width; ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    let pen = false;
+    for (const v of points) {
+      const p = project(v, B);
+      const vis = surface ? p.d > 0 : !hidden(p);
+      if (vis) { pen ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); pen = true; } else pen = false;
+    }
+    ctx.stroke(); ctx.globalAlpha = 1;
+  }
+
+  // ---- Visibility and target bookkeeping ----
+  function updateTargets(satsEcef) {
+    let count = 0;
+    for (const g of targets) {
+      g.seenBy = [];
+      satsEcef.forEach((s, i) => {
+        if (!sats[i].on) return;
+        const rho = sub(s, g.v);
+        if (dot(rho, g.v) / norm(rho) > SIN_MASK) g.seenBy.push(i);
+      });
+      const now = g.seenBy.length > 0;
+      if (now) {
+        if (!g.inView && g.outStart !== null) maxGap = Math.max(maxGap, (t - g.outStart) / 60);
+        g.last = t; count++;
+      } else if (g.inView) g.outStart = t;
+      g.inView = now;
+    }
+    return count;
+  }
+  function resetTracking() {
+    targets.forEach(g => { g.last = null; g.outStart = null; g.inView = false; });
+    maxGap = 0;
+  }
+
+  // ---- Drawing ----
+  function draw() {
+    const B = basis();
+    const colour = [C.p1, C.p2, C.p3];
+    ctx.clearRect(0, 0, W, H);
+
+    ctx.fillStyle = C.globe;
+    ctx.beginPath(); ctx.arc(CX, CY, S, 0, Math.PI * 2); ctx.fill();
+
+    for (let lon = -180; lon < 180; lon += 30) {              // graticule (Earth-fixed)
+      const pts = []; for (let la = -90; la <= 90; la += 4) pts.push(toRender(unit(la, lon)));
+      polyline(pts, B, C.grat, 1, 1, true);
+    }
+    for (let la = -60; la <= 60; la += 30) {
+      const pts = []; for (let lo = -180; lo <= 180; lo += 4) pts.push(toRender(unit(la, lo)));
+      polyline(pts, B, C.grat, la === 0 ? 1.6 : 1, 1, true);
+    }
+    const box = [];                                          // outline of the target region
+    for (let lo = 91; lo <= 129; lo += 2) box.push(toRender(unit(24, lo)));
+    for (let la = 24; la >= -14; la -= 2) box.push(toRender(unit(la, 129)));
+    for (let lo = 129; lo >= 91; lo -= 2) box.push(toRender(unit(-14, lo)));
+    for (let la = -14; la <= 24; la += 2) box.push(toRender(unit(la, 91)));
+    ctx.setLineDash([4, 4]); polyline(box, B, C.region, 1, 0.5, true); ctx.setLineDash([]);
+
+    const eci = sats.map(s => satECI(s, t));
+    const ecef = eci.map(v => eciToEcef(v, t));
+    const rend = frame === "fixed" ? ecef : eci;
+    const inView = updateTargets(ecef);
+
+    if (show.orbit) for (let p = 0; p < 3; p++) {           // orbit rings
+      const s0 = sats[p * 8], pts = [];
+      for (let k = 0; k <= 96; k++) {
+        const v = satECI({ ...s0, u0: 0 }, k * 2 * Math.PI / 96 / N);
+        pts.push(frame === "fixed" ? eciToEcef(v, t) : v);
+      }
+      polyline(pts, B, colour[p], 1, 0.35, false);
+    }
+
+    if (show.track) sats.forEach((s, i) => {                  // ground tracks, last 30 min
+      if (!s.on) return;
+      const pts = [];
+      for (let k = 30; k >= 0; k--) {
+        const tk = t - k * 60, e = eciToEcef(satECI(s, tk), tk), n = norm(e);
+        pts.push(toRender([e[0] / n, e[1] / n, e[2] / n]));
+      }
+      polyline(pts, B, colour[s.plane], 1.5, 0.55, true);
+    });
+
+    if (show.foot) sats.forEach((s, i) => {                   // 10° footprint circles
+      if (!s.on) return;
+      const e = ecef[i], n = norm(e), c = [e[0] / n, e[1] / n, e[2] / n];
+      const a = Math.abs(c[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+      let p1 = [a[1] * c[2] - a[2] * c[1], a[2] * c[0] - a[0] * c[2], a[0] * c[1] - a[1] * c[0]];
+      const m = norm(p1); p1 = p1.map(x => x / m);
+      const p2 = [c[1] * p1[2] - c[2] * p1[1], c[2] * p1[0] - c[0] * p1[2], c[0] * p1[1] - c[1] * p1[0]];
+      const cl = Math.cos(LAMBDA), sl = Math.sin(LAMBDA), pts = [];
+      for (let k = 0; k <= 48; k++) {
+        const q = k / 48 * 2 * Math.PI, cq = Math.cos(q) * sl, sq = Math.sin(q) * sl;
+        pts.push(toRender([c[0] * cl + p1[0] * cq + p2[0] * sq, c[1] * cl + p1[1] * cq + p2[1] * sq, c[2] * cl + p1[2] * cq + p2[2] * sq]));
+      }
+      polyline(pts, B, colour[s.plane], 1.2, 0.8, true);
+    });
+
+    for (const g of targets) {                               // targets
+      const p = project(toRender(g.v), B);
+      if (p.d <= 0) continue;
+      if (show.los && g.inView) for (const i of g.seenBy) {
+        const q = project(rend[i], B);
+        if (hidden(q)) continue;
+        ctx.strokeStyle = C.hit; ctx.globalAlpha = 0.6; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.globalAlpha = 1;
+      }
+      ctx.beginPath(); ctx.arc(p.x, p.y, g.inView ? 5 : 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = g.inView ? C.hit : C.ink; ctx.globalAlpha = g.inView ? 1 : 0.55; ctx.fill(); ctx.globalAlpha = 1;
+    }
+
+    screenSats = [];                                         // satellites
+    sats.forEach((s, i) => {
+      const p = project(rend[i], B);
+      if (hidden(p)) return;
+      screenSats.push({ i, x: p.x, y: p.y });
+      ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+      if (s.on) { ctx.fillStyle = colour[s.plane]; ctx.fill(); ctx.strokeStyle = C.globe; ctx.lineWidth = 1.5; ctx.stroke(); }
+      else {
+        ctx.strokeStyle = C.off; ctx.lineWidth = 2; ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p.x - 4, p.y - 4); ctx.lineTo(p.x + 4, p.y + 4); ctx.moveTo(p.x + 4, p.y - 4); ctx.lineTo(p.x - 4, p.y + 4); ctx.stroke();
+      }
+    });
+
+    updatePanel(inView);
+  }
+
+  // ---- Side panel ----
+  const grid = $("grid"), cells = [];
+  grid.appendChild(Object.assign(document.createElement("div"), { className: "ax" }));
+  LONS.forEach(lo => grid.appendChild(Object.assign(document.createElement("div"), { className: "ax", textContent: lo + "°E" })));
+  LATS.forEach((la, r) => {
+    grid.appendChild(Object.assign(document.createElement("div"), { className: "ax", textContent: (la < 0 ? -la + "°S" : la + "°N") }));
+    LONS.forEach(() => { const c = document.createElement("div"); c.className = "cell"; grid.appendChild(c); cells.push(c); });
+  });
+
+  let lastPanel = 0;
+  function updatePanel(inView) {
+    const hh = Math.floor(t / 3600) % 24, mm = Math.floor(t / 60) % 60;
+    $("clock").firstChild.nodeValue = String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0");
+    $("scrub").value = t;
+    const now = performance.now();
+    if (now - lastPanel < 150) return;                      // don't redraw text every frame
+    lastPanel = now;
+    $("sInView").textContent = inView;
+    $("sWorking").textContent = sats.filter(s => s.on).length;
+    $("sGap").textContent = Math.round(maxGap);
+    targets.forEach((g, k) => {
+      const c = cells[k];
+      c.classList.toggle("on", g.inView);
+      c.textContent = g.inView ? g.seenBy.length : (g.last === null ? "–" : Math.round((t - g.last) / 60));
+      c.title = g.inView ? `In view of ${g.seenBy.length} satellite(s)` : "Minutes since last seen";
+    });
+  }
+
+  // ---- Loop ----
+  let prev = performance.now();
+  function loop(now) {
+    const dt = Math.min((now - prev) / 1000, 0.1); prev = now;
+    if (playing) {
+      t += dt * speed;
+      if (t >= 86400) { t -= 86400; resetTracking(); }
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ---- Controls ----
+  function setPlaying(v) { playing = v; $("play").textContent = v ? "Pause" : "Play"; $("play").setAttribute("aria-label", v ? "Pause" : "Play"); }
+  setPlaying(playing);
+  $("play").onclick = () => setPlaying(!playing);
+  $("speed").onchange = e => speed = +e.target.value;
+  $("scrub").oninput = e => { t = +e.target.value; resetTracking(); };
+  document.addEventListener("keydown", e => {
+    if (e.code === "Space" && !["INPUT", "SELECT", "BUTTON"].includes(document.activeElement.tagName)) { e.preventDefault(); setPlaying(!playing); }
+  });
+
+  function setFrame(f) {
+    if (f === frame) return;
+    cam.lon += (f === "inertial" ? 1 : -1) * theta(t);      // keep the same view when switching
+    frame = f;
+    $("vFixed").setAttribute("aria-pressed", f === "fixed");
+    $("vInertial").setAttribute("aria-pressed", f === "inertial");
+    $("viewNote").textContent = f === "fixed"
+      ? "The camera turns with Earth, so you watch satellites sweep over the targets."
+      : "The camera stays still in space. The three orbit rings hold steady while Earth spins underneath.";
+  }
+  $("vFixed").onclick = () => setFrame("fixed");
+  $("vInertial").onclick = () => setFrame("inertial");
+  $("recentre").onclick = () => { cam.lat = 8 * D2R; cam.lon = 110 * D2R + (frame === "inertial" ? theta(t) : 0); };
+  [["tFoot", "foot"], ["tTrack", "track"], ["tOrbit", "orbit"], ["tLos", "los"]].forEach(([id, k]) => $(id).onchange = e => show[k] = e.target.checked);
+
+  $("knock").onclick = () => {
+    sats.forEach(s => s.on = true);
+    const ids = sats.map(s => s.id);
+    for (let k = ids.length - 1; k > 0; k--) { const r = Math.floor(Math.random() * (k + 1)); [ids[k], ids[r]] = [ids[r], ids[k]]; }
+    ids.slice(0, 7).forEach(i => sats[i].on = false);       // 30% of 24, rounded = 7
+  };
+  $("restore").onclick = () => sats.forEach(s => s.on = true);
+
+  // Drag to rotate; click (without dragging) to toggle a satellite
+  let drag = null;
+  cv.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY, moved: 0 }; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointermove", e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.moved += Math.abs(dx) + Math.abs(dy); drag.x = e.clientX; drag.y = e.clientY;
+    cam.lon -= dx / S; cam.lat = Math.max(-85 * D2R, Math.min(85 * D2R, cam.lat + dy / S));
+  });
+  cv.addEventListener("pointerup", e => {
+    if (drag && drag.moved < 5) {
+      const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+      let best = null, bd = 14;
+      for (const s of screenSats) { const d = Math.hypot(s.x - x, s.y - y); if (d < bd) { bd = d; best = s; } }
+      if (best) { sats[best.i].on = !sats[best.i].on; $("hint").textContent = `Satellite ${best.i + 1} (plane ${sats[best.i].plane + 1}) switched ${sats[best.i].on ? "on" : "off"}.`; }
+    }
+    drag = null;
+  });
+  cv.addEventListener("keydown", e => {                      // keyboard rotation
+    const step = 5 * D2R;
+    if (e.key === "ArrowLeft") cam.lon -= step; else if (e.key === "ArrowRight") cam.lon += step;
+    else if (e.key === "ArrowUp") cam.lat = Math.min(85 * D2R, cam.lat + step);
+    else if (e.key === "ArrowDown") cam.lat = Math.max(-85 * D2R, cam.lat - step);
+    else return;
+    e.preventDefault();
+  });
+
+  resize();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
